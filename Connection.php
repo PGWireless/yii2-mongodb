@@ -119,6 +119,8 @@ class Connection extends Component
      */
     public $mongoClient;
 
+    public $storageName;
+
     /**
      * @var Database[] list of Mongo databases
      */
@@ -175,7 +177,8 @@ class Connection extends Component
 
         return Yii::createObject([
             'class' => 'yii\mongodb\Database',
-            'mongoDb' => $this->mongoClient->selectDB($name)
+            'mongoDb' => $this->mongoClient->selectDB($name),
+            'storageName' => $this->storageName,
         ]);
     }
 

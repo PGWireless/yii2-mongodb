@@ -7,10 +7,11 @@
 
 namespace yii\mongodb;
 
-use yii\base\InvalidParamException;
-use yii\base\Object;
 use Yii;
+use yii\base\Object;
 use yii\helpers\ArrayHelper;
+use yii\base\InvalidParamException;
+use DBStorage\Codec\Adapter\MongoCodec;
 
 /**
  * Collection represents the Mongo collection information.
@@ -73,6 +74,17 @@ class Collection extends Object
      * @var \MongoCollection Mongo collection instance.
      */
     public $mongoCollection;
+
+    public $storageName;
+
+    /** @var MongoCodec */
+    private $_codec;
+
+    public function init()
+    {
+        parent::init();
+        $this->_codec = MongoCodec::instance($this->storageName);
+    }
 
 
     /**
@@ -338,7 +350,8 @@ class Collection extends Object
      */
     public function findOne($condition = [], $fields = [])
     {
-        return $this->mongoCollection->findOne($this->buildCondition($condition), $fields);
+        $res = $this->mongoCollection->findOne($this->buildCondition($condition), $fields);
+        return $this->_codec->decode($this->name, $res);
     }
 
     /**
@@ -361,7 +374,7 @@ class Collection extends Object
             $result = $this->mongoCollection->findAndModify($condition, $update, $fields, $options);
             Yii::endProfile($token, __METHOD__);
 
-            return $result;
+            return $this->_codec->decode($this->name, $result);
         } catch (\Exception $e) {
             Yii::endProfile($token, __METHOD__);
             throw new Exception($e->getMessage(), (int) $e->getCode(), $e);
@@ -377,6 +390,7 @@ class Collection extends Object
      */
     public function insert($data, $options = [])
     {
+        $data = $this->_codec->encode($this->name, $data);
         $token = $this->composeLogToken('insert', [$data]);
         Yii::info($token, __METHOD__);
         try {
@@ -401,12 +415,16 @@ class Collection extends Object
      */
     public function batchInsert($rows, $options = [])
     {
-        $token = $this->composeLogToken('batchInsert', [$rows]);
+        $encodedRows = array_map(function ($row) {
+            return $this->_codec->encode($this->name, $row);
+        }, $rows);
+
+        $token = $this->composeLogToken('batchInsert', [$encodedRows]);
         Yii::info($token, __METHOD__);
         try {
             Yii::beginProfile($token, __METHOD__);
             $options = array_merge(['w' => 1], $options);
-            $this->tryResultError($this->mongoCollection->batchInsert($rows, $options));
+            $this->tryResultError($this->mongoCollection->batchInsert($encodedRows, $options));
             Yii::endProfile($token, __METHOD__);
 
             return $rows;
@@ -463,6 +481,7 @@ class Collection extends Object
      */
     public function save($data, $options = [])
     {
+        $data = $this->_codec->encode($this->name, $data);
         $token = $this->composeLogToken('save', [$data]);
         Yii::info($token, __METHOD__);
         try {
@@ -866,6 +885,7 @@ class Collection extends Object
             return $this->$method($operator, $condition);
         } else {
             // hash format: 'column1' => 'value1', 'column2' => 'value2', ...
+            $condition = $this->_codec->encode($this->name, $condition);
             return $this->buildHashCondition($condition);
         }
     }
@@ -918,6 +938,7 @@ class Collection extends Object
         }
 
         list($name, $value) = $operands;
+        $value = $this->_codec->encodeFieldValue($this->name, $name, $value);
 
         $result = [];
         if (is_array($value)) {
@@ -980,6 +1001,9 @@ class Collection extends Object
             throw new InvalidParamException("Operator '$operator' requires three operands.");
         }
         list($column, $value1, $value2) = $operands;
+        $value1 = $this->_codec->encodeFieldValue($this->name, $column, $value1);
+        $value2 = $this->_codec->encodeFieldValue($this->name, $column, $value2);
+
         if (strncmp('NOT', $operator, 3) === 0) {
             return [
                 $column => [
@@ -1013,6 +1037,7 @@ class Collection extends Object
         }
 
         list($column, $values) = $operands;
+        $values = $this->_codec->encodeFieldValue($this->name, $column, $values);
 
         $values = (array) $values;
         $operator = $this->normalizeConditionKeyword($operator);
@@ -1068,6 +1093,7 @@ class Collection extends Object
 
         foreach ($columns as $column) {
             $columnInValues = array_values($inValues[$column]);
+            $columnInValues = $this->_codec->encodeFieldValue($this->name, $column, $columnInValues);
             if (count($columnInValues) === 1 && $operator === '$in') {
                 $result[$column] = $columnInValues[0];
             } else {
@@ -1136,6 +1162,7 @@ class Collection extends Object
         }
 
         list($column, $value) = $operands;
+        $value = $this->_codec->encodeFieldValue($this->name, $column, $value);
 
         if (strncmp('$', $operator, 1) !== 0) {
             static $operatorMap = [

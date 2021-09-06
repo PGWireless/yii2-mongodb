@@ -7,6 +7,7 @@
 
 namespace yii\mongodb;
 
+use DBStorage\Codec\Adapter\MongoCodec;
 use yii\base\Component;
 use yii\db\QueryInterface;
 use yii\db\QueryTrait;
@@ -60,6 +61,17 @@ class Query extends Component implements QueryInterface
      */
     public $options = [];
 
+    protected $storageName;
+
+    /** @var MongoCodec */
+    private $_codec;
+
+    public function setStorageName($name)
+    {
+        $this->storageName = $name;
+        $this->_codec = MongoCodec::instance($name);
+    }
+
 
     /**
      * Returns the Mongo collection for this query.
@@ -71,7 +83,6 @@ class Query extends Component implements QueryInterface
         if ($db === null) {
             $db = Yii::$app->get('mongodb');
         }
-
         return $db->getCollection($this->from);
     }
 
@@ -234,6 +245,14 @@ class Query extends Component implements QueryInterface
             } else {
                 $result = false;
             }
+        }
+
+        if ($result) {
+            $collName = $this->from;
+            if (is_array($collName)) {
+                $collName = $this->from[1];
+            }
+            $result = $this->_codec->decode($collName, $result);
         }
 
         return $result;

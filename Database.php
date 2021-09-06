@@ -27,6 +27,8 @@ class Database extends Object
      */
     public $mongoDb;
 
+    public $storageName;
+
     /**
      * @var Collection[] list of collections.
      */
@@ -84,7 +86,8 @@ class Database extends Object
     {
         return Yii::createObject([
             'class' => 'yii\mongodb\Collection',
-            'mongoCollection' => $this->mongoDb->selectCollection($name)
+            'mongoCollection' => $this->mongoDb->selectCollection($name),
+            'storageName' => $this->storageName,
         ]);
     }
 
